@@ -1,5 +1,7 @@
 # H2-JS
 
+[![CI](https://github.com/hamid-nazar/h2-js/actions/workflows/ci.yml/badge.svg)](https://github.com/hamid-nazar/h2-js/actions/workflows/ci.yml)
+
 A reimplementation of the H2 database engine in TypeScript, built for learning database internals.
 
 ## What is this?
