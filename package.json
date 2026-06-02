@@ -1,0 +1,37 @@
+{
+  "name": "h2-js",
+  "version": "0.1.0",
+  "description": "A reimplementation of the H2 database engine in TypeScript, built for learning database internals",
+  "type": "module",
+  "main": "dist/cli/repl.js",
+  "author": "Hamid Nazari",
+  "license": "MIT",
+  "scripts": {
+    "dev": "npm run build && npm run repl",
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "repl": "node dist/cli/repl.js",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "format": "prettier --write src/",
+    "test": "vitest run",
+    "clean": "rm -rf dist/ data/*.db"
+  },
+  "keywords": [
+    "database",
+    "sql",
+    "typescript",
+    "learning",
+    "storage-engine"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.4.1",
+    "prettier": "^3.8.3",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.60.1"
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    // Type Checking - Strict Mode
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+
+    // Modules
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "resolveJsonModule": true,
+
+    // Emit
+    "target": "ES2022",
+    "outDir": "dist",
+    "rootDir": "src",
+    "declaration": true,
+    "sourceMap": true,
+
+    // Interop
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+
+    // Skip type checking node_modules
+    "skipLibCheck": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}
