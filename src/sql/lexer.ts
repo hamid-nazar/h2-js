@@ -154,9 +154,23 @@ export class Lexer {
 
   /**
    * Scan a string literal (single-quoted).
+   *
+   * SQL uses doubled quotes to escape: 'it''s' represents the string "it's"
    */
   private string(): void {
-    while (!this.isAtEnd() && this.peek() !== "'") {
+    while (!this.isAtEnd()) {
+      if (this.peek() === "'") {
+        // Check if this is an escaped quote ('')
+        if (this.peekNext() === "'") {
+          // Escaped quote - consume both and continue
+          this.advance(); // First quote
+          this.advance(); // Second quote
+          continue;
+        }
+        // Not escaped - this is the closing quote
+        break;
+      }
+
       if (this.peek() === "\n") {
         this.line++;
         this.column = 0; // Will be incremented by advance()

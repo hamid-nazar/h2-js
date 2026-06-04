@@ -85,6 +85,32 @@ describe("Lexer", () => {
       expect(tokens[0]?.lexeme).toBe("''");
     });
 
+    it("should handle escaped quotes in strings", () => {
+      // SQL escapes quotes by doubling them: '' represents a single '
+      const lexer = new Lexer("'it''s a test'");
+      const tokens = lexer.tokenize();
+
+      expect(tokens[0]?.kind).toBe(TokenKind.STRING_LITERAL);
+      expect(tokens[0]?.lexeme).toBe("'it''s a test'");
+    });
+
+    it("should handle multiple escaped quotes", () => {
+      const lexer = new Lexer("'he said ''hello'' to me'");
+      const tokens = lexer.tokenize();
+
+      expect(tokens[0]?.kind).toBe(TokenKind.STRING_LITERAL);
+      expect(tokens[0]?.lexeme).toBe("'he said ''hello'' to me'");
+    });
+
+    it("should handle string that is just an escaped quote", () => {
+      // '''' represents a string containing a single quote
+      const lexer = new Lexer("''''");
+      const tokens = lexer.tokenize();
+
+      expect(tokens[0]?.kind).toBe(TokenKind.STRING_LITERAL);
+      expect(tokens[0]?.lexeme).toBe("''''");
+    });
+
     it("should tokenize boolean literals", () => {
       const lexer = new Lexer("TRUE FALSE true false");
       const tokens = lexer.tokenize();
