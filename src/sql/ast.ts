@@ -21,6 +21,7 @@ export type DataType = "INTEGER" | "TEXT" | "BOOLEAN" | "REAL";
 export interface ColumnDefinition {
   name: string;
   dataType: DataType;
+  primaryKey?: boolean;
 }
 
 // =============================================================================

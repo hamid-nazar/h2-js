@@ -13,6 +13,8 @@ export enum TokenKind {
   CREATE = "CREATE",
   DROP = "DROP",
   TABLE = "TABLE",
+  PRIMARY = "PRIMARY",
+  KEY = "KEY",
 
   // Data Manipulation
   SELECT = "SELECT",
@@ -115,6 +117,8 @@ export const KEYWORDS: ReadonlyMap<string, TokenKind> = new Map([
   ["CREATE", TokenKind.CREATE],
   ["DROP", TokenKind.DROP],
   ["TABLE", TokenKind.TABLE],
+  ["PRIMARY", TokenKind.PRIMARY],
+  ["KEY", TokenKind.KEY],
 
   // Data Manipulation
   ["SELECT", TokenKind.SELECT],
