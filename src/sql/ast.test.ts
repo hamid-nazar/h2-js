@@ -13,6 +13,7 @@ import type {
   LiteralExpression,
   ColumnRefExpression,
   BinaryExpression,
+  FunctionCallExpression,
 } from "./ast.js";
 
 describe("AST Statement Types", () => {
@@ -271,6 +272,65 @@ describe("AST Expression Types", () => {
     });
   });
 
+  describe("FunctionCallExpression", () => {
+    it("should represent function with no arguments", () => {
+      const expr: FunctionCallExpression = {
+        type: "FunctionCall",
+        name: "NOW",
+        args: [],
+      };
+
+      expect(expr.type).toBe("FunctionCall");
+      expect(expr.name).toBe("NOW");
+      expect(expr.args).toHaveLength(0);
+    });
+
+    it("should represent function with single argument", () => {
+      // UPPER(name)
+      const expr: FunctionCallExpression = {
+        type: "FunctionCall",
+        name: "UPPER",
+        args: [{ type: "ColumnRef", column: "name" }],
+      };
+
+      expect(expr.name).toBe("UPPER");
+      expect(expr.args).toHaveLength(1);
+      expect(expr.args[0]?.type).toBe("ColumnRef");
+    });
+
+    it("should represent aggregate functions", () => {
+      // COUNT(*) - represented as COUNT with no args (special case)
+      // SUM(amount)
+      const sum: FunctionCallExpression = {
+        type: "FunctionCall",
+        name: "SUM",
+        args: [{ type: "ColumnRef", column: "amount" }],
+      };
+
+      expect(sum.name).toBe("SUM");
+    });
+
+    it("should support nested expressions as arguments", () => {
+      // ROUND(price * 1.1, 2)
+      const expr: FunctionCallExpression = {
+        type: "FunctionCall",
+        name: "ROUND",
+        args: [
+          {
+            type: "Binary",
+            operator: "*",
+            left: { type: "ColumnRef", column: "price" },
+            right: { type: "Literal", value: 1.1, dataType: "REAL" },
+          },
+          { type: "Literal", value: 2, dataType: "INTEGER" },
+        ],
+      };
+
+      expect(expr.args).toHaveLength(2);
+      expect(expr.args[0]?.type).toBe("Binary");
+    });
+  });
+
   describe("Expression nesting", () => {
     it("should represent complex WHERE clause", () => {
       // Represents: age > 21 AND active = TRUE
@@ -293,6 +353,59 @@ describe("AST Expression Types", () => {
 
       expect(where.type).toBe("Binary");
       expect(where.operator).toBe("AND");
+    });
+
+    it("should support arbitrary nesting depth", () => {
+      // Represents: ((a + b) * c) - d
+      // Tree depth of 3
+      const expr: BinaryExpression = {
+        type: "Binary",
+        operator: "-",
+        left: {
+          type: "Binary",
+          operator: "*",
+          left: {
+            type: "Binary",
+            operator: "+",
+            left: { type: "ColumnRef", column: "a" },
+            right: { type: "ColumnRef", column: "b" },
+          },
+          right: { type: "ColumnRef", column: "c" },
+        },
+        right: { type: "ColumnRef", column: "d" },
+      };
+
+      // Navigate the tree to verify depth
+      expect(expr.operator).toBe("-");
+      expect(expr.left.type).toBe("Binary");
+
+      const mult = expr.left as BinaryExpression;
+      expect(mult.operator).toBe("*");
+      expect(mult.left.type).toBe("Binary");
+
+      const add = mult.left as BinaryExpression;
+      expect(add.operator).toBe("+");
+    });
+
+    it("should encode operator precedence in tree shape", () => {
+      // 1 + 2 * 3 should be represented as 1 + (2 * 3)
+      // The * is deeper in the tree, so it evaluates first
+      const expr: BinaryExpression = {
+        type: "Binary",
+        operator: "+",
+        left: { type: "Literal", value: 1, dataType: "INTEGER" },
+        right: {
+          type: "Binary",
+          operator: "*",
+          left: { type: "Literal", value: 2, dataType: "INTEGER" },
+          right: { type: "Literal", value: 3, dataType: "INTEGER" },
+        },
+      };
+
+      // + is at the top (evaluated last)
+      expect(expr.operator).toBe("+");
+      // * is deeper (evaluated first)
+      expect((expr.right as BinaryExpression).operator).toBe("*");
     });
   });
 });

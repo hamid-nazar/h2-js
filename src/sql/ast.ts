@@ -24,18 +24,22 @@ export interface ColumnDefinition {
 }
 
 // =============================================================================
-// Expressions (placeholder - will be expanded in TASK-014)
+// Expressions
 // =============================================================================
 
 /**
  * Expressions represent values or computations.
- * This is a placeholder that will be expanded in TASK-014.
+ *
+ * Expressions can nest to arbitrary depth, forming a tree structure.
+ * Operator precedence is encoded in the tree shape - deeper nodes
+ * are evaluated first.
  */
 export type Expression =
   | LiteralExpression
   | ColumnRefExpression
   | BinaryExpression
-  | UnaryExpression;
+  | UnaryExpression
+  | FunctionCallExpression;
 
 /**
  * A literal value: 42, 'hello', TRUE, NULL
@@ -92,6 +96,15 @@ export interface UnaryExpression {
 }
 
 export type UnaryOperator = "NOT" | "-";
+
+/**
+ * A function call: COUNT(*), SUM(amount), UPPER(name)
+ */
+export interface FunctionCallExpression {
+  type: "FunctionCall";
+  name: string;
+  args: Expression[];
+}
 
 // =============================================================================
 // SELECT Statement
