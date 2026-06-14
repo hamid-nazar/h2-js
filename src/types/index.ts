@@ -1,2 +1,2 @@
 // Type System: Runtime value types and serialization
-export {};
+export * from "./value.js";
