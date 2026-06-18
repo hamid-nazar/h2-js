@@ -1,2 +1,2 @@
 // Execution Engine: Volcano-model operators and expression evaluator
-export {};
+export * from "./evaluator.js";
