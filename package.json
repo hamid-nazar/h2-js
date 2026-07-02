@@ -9,6 +9,8 @@
   "scripts": {
     "dev": "npm run build && npm run repl",
     "build": "tsc",
+    "test-build":"npx tsc src/sql/lexer.ts --target ES2022 --module NodeNext --esModuleInterop --outDir ./dist --ignoreConfig",
+    "test-run":"npx tsx src/manual-test.ts",
     "watch": "tsc --watch",
     "repl": "node dist/cli/repl.js",
     "lint": "eslint src/",
