@@ -137,6 +137,39 @@ export class TableStore {
   }
 
   /**
+   * Update a row at a specific index.
+   *
+   * @param name - Table name
+   * @param index - Row index
+   * @param values - New row values
+   */
+  updateRow(name: string, index: number, values: Value[]): void {
+    const table = this.getTable(name);
+    if (index < 0 || index >= table.rows.length) {
+      throw new Error(`Row index ${String(index)} out of bounds`);
+    }
+    table.rows[index] = values;
+  }
+
+  /**
+   * Delete rows at specified indices.
+   * Indices should be sorted in descending order to avoid shifting issues.
+   *
+   * @param name - Table name
+   * @param indices - Row indices to delete (will be sorted descending)
+   */
+  deleteRows(name: string, indices: number[]): void {
+    const table = this.getTable(name);
+    // Sort descending so we delete from end first (avoids index shifting)
+    const sortedIndices = [...indices].sort((a, b) => b - a);
+    for (const index of sortedIndices) {
+      if (index >= 0 && index < table.rows.length) {
+        table.rows.splice(index, 1);
+      }
+    }
+  }
+
+  /**
    * List all table names.
    */
   listTables(): string[] {

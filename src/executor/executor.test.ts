@@ -3,12 +3,20 @@ import {
   execute,
   executeSelect,
   executeInsert,
+  executeUpdate,
+  executeDelete,
   SelectResult,
 } from "./executor.js";
 import { TableStore } from "./store.js";
 import { Parser } from "../sql/parser.js";
 import { Lexer } from "../sql/lexer.js";
-import { SelectStatement, InsertStatement, Statement } from "../sql/ast.js";
+import {
+  SelectStatement,
+  InsertStatement,
+  UpdateStatement,
+  DeleteStatement,
+  Statement,
+} from "../sql/ast.js";
 import { Value, integer, real, text, boolean, NULL, isNull } from "../types/value.js";
 
 // =============================================================================
@@ -34,6 +42,22 @@ function parseInsert(sql: string): InsertStatement {
   const stmt = parse(sql);
   if (stmt.type !== "InsertStatement") {
     throw new Error(`Expected InsertStatement, got ${stmt.type}`);
+  }
+  return stmt;
+}
+
+function parseUpdate(sql: string): UpdateStatement {
+  const stmt = parse(sql);
+  if (stmt.type !== "UpdateStatement") {
+    throw new Error(`Expected UpdateStatement, got ${stmt.type}`);
+  }
+  return stmt;
+}
+
+function parseDelete(sql: string): DeleteStatement {
+  const stmt = parse(sql);
+  if (stmt.type !== "DeleteStatement") {
+    throw new Error(`Expected DeleteStatement, got ${stmt.type}`);
   }
   return stmt;
 }
@@ -223,6 +247,158 @@ describe("Query Executor", () => {
         "INSERT INTO users (id, name, unknown) VALUES (7, 'Test', 123)"
       );
       expect(() => executeInsert(stmt, store)).toThrow("Unknown column");
+    });
+  });
+
+  // ===========================================================================
+  // UPDATE Tests
+  // ===========================================================================
+
+  describe("UPDATE", () => {
+    it("should update matching rows", () => {
+      const stmt = parseUpdate("UPDATE users SET age = 31 WHERE name = 'Alice'");
+      const result = executeUpdate(stmt, store);
+
+      expect(result.type).toBe("update");
+      expect(result.rowsAffected).toBe(1);
+
+      // Verify the update
+      const selectResult = executeSelect(
+        parseSelect("SELECT age FROM users WHERE name = 'Alice'"),
+        store
+      );
+      expect(selectResult.rows[0]).toEqual([integer(31)]);
+    });
+
+    it("should update multiple rows", () => {
+      const stmt = parseUpdate("UPDATE users SET active = FALSE WHERE age < 30");
+      const result = executeUpdate(stmt, store);
+
+      expect(result.rowsAffected).toBe(2); // Bob (25) and Diana (28)
+
+      // Verify the updates
+      const selectResult = executeSelect(
+        parseSelect("SELECT name, active FROM users WHERE active = FALSE"),
+        store
+      );
+      expect(selectResult.rows).toHaveLength(2); // Bob and Diana both now FALSE
+    });
+
+    it("should update all rows without WHERE clause", () => {
+      const stmt = parseUpdate("UPDATE users SET active = TRUE");
+      const result = executeUpdate(stmt, store);
+
+      expect(result.rowsAffected).toBe(4);
+
+      const selectResult = executeSelect(
+        parseSelect("SELECT name FROM users WHERE active = FALSE"),
+        store
+      );
+      expect(selectResult.rows).toHaveLength(0);
+    });
+
+    it("should update multiple columns", () => {
+      const stmt = parseUpdate(
+        "UPDATE users SET age = 99, active = FALSE WHERE id = 1"
+      );
+      executeUpdate(stmt, store);
+
+      const selectResult = executeSelect(
+        parseSelect("SELECT age, active FROM users WHERE id = 1"),
+        store
+      );
+      expect(selectResult.rows[0]).toEqual([integer(99), boolean(false)]);
+    });
+
+    it("should support expressions in SET clause", () => {
+      const stmt = parseUpdate("UPDATE users SET age = age + 1 WHERE id = 1");
+      executeUpdate(stmt, store);
+
+      const selectResult = executeSelect(
+        parseSelect("SELECT age FROM users WHERE id = 1"),
+        store
+      );
+      expect(selectResult.rows[0]).toEqual([integer(31)]); // Was 30, now 31
+    });
+
+    it("should return 0 when no rows match", () => {
+      const stmt = parseUpdate("UPDATE users SET age = 100 WHERE age > 1000");
+      const result = executeUpdate(stmt, store);
+
+      expect(result.rowsAffected).toBe(0);
+    });
+
+    it("should throw on unknown column in SET", () => {
+      const stmt = parseUpdate("UPDATE users SET unknown = 5 WHERE id = 1");
+      expect(() => executeUpdate(stmt, store)).toThrow("Unknown column");
+    });
+  });
+
+  // ===========================================================================
+  // DELETE Tests
+  // ===========================================================================
+
+  describe("DELETE", () => {
+    it("should delete matching rows", () => {
+      const stmt = parseDelete("DELETE FROM users WHERE name = 'Bob'");
+      const result = executeDelete(stmt, store);
+
+      expect(result.type).toBe("delete");
+      expect(result.rowsAffected).toBe(1);
+
+      // Verify the deletion
+      const selectResult = executeSelect(
+        parseSelect("SELECT * FROM users"),
+        store
+      );
+      expect(selectResult.rows).toHaveLength(3);
+    });
+
+    it("should delete multiple rows", () => {
+      const stmt = parseDelete("DELETE FROM users WHERE age < 30");
+      const result = executeDelete(stmt, store);
+
+      expect(result.rowsAffected).toBe(2); // Bob (25) and Diana (28)
+
+      const selectResult = executeSelect(
+        parseSelect("SELECT name FROM users"),
+        store
+      );
+      expect(selectResult.rows).toHaveLength(2);
+      expect(selectResult.rows.map((r) => r[0])).toEqual([
+        text("Alice"),
+        text("Charlie"),
+      ]);
+    });
+
+    it("should delete all rows without WHERE clause", () => {
+      const stmt = parseDelete("DELETE FROM users");
+      const result = executeDelete(stmt, store);
+
+      expect(result.rowsAffected).toBe(4);
+
+      const selectResult = executeSelect(
+        parseSelect("SELECT * FROM users"),
+        store
+      );
+      expect(selectResult.rows).toHaveLength(0);
+    });
+
+    it("should return 0 when no rows match", () => {
+      const stmt = parseDelete("DELETE FROM users WHERE age > 1000");
+      const result = executeDelete(stmt, store);
+
+      expect(result.rowsAffected).toBe(0);
+    });
+
+    it("should work with complex WHERE conditions", () => {
+      const stmt = parseDelete(
+        "DELETE FROM users WHERE age > 25 AND active = FALSE"
+      );
+      const result = executeDelete(stmt, store);
+
+      // No rows match (Bob is 25, not > 25; others with age > 25 are active)
+      expect(result.rowsAffected).toBe(0);
     });
   });
 
