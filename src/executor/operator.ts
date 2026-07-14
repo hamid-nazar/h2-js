@@ -10,8 +10,9 @@
  * snap together like building blocks).
  */
 
-import { Value } from "../types/value.js";
-import { Expression, SelectColumn } from "../sql/ast.js";
+import { Value, isNull } from "../types/value.js";
+import { Expression, SelectColumn, OrderByItem } from "../sql/ast.js";
+import { lessThan } from "../types/comparison.js";
 import {
   evaluate,
   evaluateToBoolean,
@@ -301,6 +302,129 @@ export class Project implements Operator {
 
   getColumns(): string[] {
     return this.outputColumns;
+  }
+}
+
+// =============================================================================
+// Sort Operator
+// =============================================================================
+
+/**
+ * Sorts rows based on ORDER BY expressions.
+ *
+ * Unlike other operators, Sort must materialize all rows from its child
+ * before returning any. This breaks the streaming property but is inherent
+ * to sorting.
+ *
+ * NULL handling follows SQL standard:
+ * - ASC: NULLs sort last
+ * - DESC: NULLs sort first
+ */
+export class Sort implements Operator {
+  private isOpen: boolean = false;
+  private sortedRows: Row[] = [];
+  private index: number = 0;
+
+  constructor(
+    private child: Operator,
+    private orderBy: OrderByItem[]
+  ) {}
+
+  open(): void {
+    this.child.open();
+    this.isOpen = true;
+
+    // Materialize all rows from child
+    const rows: Row[] = [];
+    let row = this.child.next();
+    while (row !== null) {
+      rows.push(row);
+      row = this.child.next();
+    }
+
+    // Sort rows
+    this.sortedRows = this.sortRows(rows);
+    this.index = 0;
+  }
+
+  private sortRows(rows: Row[]): Row[] {
+    return [...rows].sort((a, b) => this.compareRows(a, b));
+  }
+
+  private compareRows(a: Row, b: Row): number {
+    for (const item of this.orderBy) {
+      const ctxA = rowToContext(a);
+      const ctxB = rowToContext(b);
+
+      const valueA = evaluate(item.expression, ctxA);
+      const valueB = evaluate(item.expression, ctxB);
+
+      const cmp = this.compareValues(valueA, valueB, item.direction);
+      if (cmp !== 0) {
+        return cmp;
+      }
+      // Values are equal, continue to next sort key
+    }
+    return 0; // All sort keys are equal
+  }
+
+  private compareValues(a: Value, b: Value, direction: "ASC" | "DESC"): number {
+    const aIsNull = isNull(a);
+    const bIsNull = isNull(b);
+
+    // Handle NULL sorting (SQL standard: NULLs last for ASC, first for DESC)
+    if (aIsNull && bIsNull) return 0;
+    if (aIsNull) return direction === "ASC" ? 1 : -1;
+    if (bIsNull) return direction === "ASC" ? -1 : 1;
+
+    // Compare non-NULL values using lessThan
+    try {
+      const aLessThanB = lessThan(a, b);
+      const bLessThanA = lessThan(b, a);
+
+      // lessThan returns BooleanValue or NullValue
+      const aLtB = aLessThanB.type === "BOOLEAN" && aLessThanB.value;
+      const bLtA = bLessThanA.type === "BOOLEAN" && bLessThanA.value;
+
+      let result: number;
+      if (aLtB) {
+        result = -1;
+      } else if (bLtA) {
+        result = 1;
+      } else {
+        result = 0;
+      }
+
+      // Reverse for DESC
+      return direction === "DESC" ? -result : result;
+    } catch {
+      // Types not comparable, treat as equal
+      return 0;
+    }
+  }
+
+  next(): Row | null {
+    if (!this.isOpen) {
+      throw new Error("Operator not open");
+    }
+
+    if (this.index >= this.sortedRows.length) {
+      return null;
+    }
+
+    const row = this.sortedRows[this.index];
+    this.index++;
+    return row ?? null;
+  }
+
+  close(): void {
+    this.child.close();
+    this.sortedRows = [];
+    this.isOpen = false;
+  }
+
+  getColumns(): string[] {
+    return this.child.getColumns();
   }
 }
 

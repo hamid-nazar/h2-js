@@ -18,7 +18,7 @@ import {
 } from "../sql/ast.js";
 import { Value } from "../types/value.js";
 import { evaluate, RowContext } from "./evaluator.js";
-import { Operator, Row, Scan, Filter, Project, Limit } from "./operator.js";
+import { Operator, Row, Scan, Filter, Project, Sort, Limit } from "./operator.js";
 import { TableStore } from "./store.js";
 
 // =============================================================================
@@ -77,8 +77,9 @@ export interface DropTableResult {
  * The tree is built bottom-up:
  * 1. Scan (FROM)
  * 2. Filter (WHERE)
- * 3. Project (SELECT)
- * 4. Limit (LIMIT)
+ * 3. Sort (ORDER BY) - note: must come before Project for column access
+ * 4. Project (SELECT)
+ * 5. Limit (LIMIT)
  */
 export function buildSelectOperator(
   stmt: SelectStatement,
@@ -94,10 +95,15 @@ export function buildSelectOperator(
     op = new Filter(op, stmt.where);
   }
 
-  // 3. Add Project for SELECT columns
+  // 3. Add Sort if ORDER BY clause exists (before Project for column access)
+  if (stmt.orderBy && stmt.orderBy.length > 0) {
+    op = new Sort(op, stmt.orderBy);
+  }
+
+  // 4. Add Project for SELECT columns
   op = new Project(op, stmt.columns);
 
-  // 4. Add Limit if LIMIT clause exists
+  // 5. Add Limit if LIMIT clause exists
   if (stmt.limit !== undefined) {
     op = new Limit(op, stmt.limit);
   }

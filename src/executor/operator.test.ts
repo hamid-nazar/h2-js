@@ -7,9 +7,10 @@ import {
   Scan,
   Filter,
   Project,
+  Sort,
   Limit,
 } from "./operator.js";
-import { Expression, SelectColumn } from "../sql/ast.js";
+import { Expression, SelectColumn, OrderByItem } from "../sql/ast.js";
 import { Value, integer, real, text, boolean, NULL } from "../types/value.js";
 
 // =============================================================================
@@ -370,6 +371,156 @@ describe("Limit", () => {
     limit.open();
     expect(limit.getColumns()).toEqual(columns);
     limit.close();
+  });
+});
+
+// =============================================================================
+// Sort Tests
+// =============================================================================
+
+describe("Sort", () => {
+  const columns = ["id", "name", "age", "score"];
+  const data: Value[][] = [
+    [integer(1), text("Charlie"), integer(30), real(85.5)],
+    [integer(2), text("Alice"), integer(25), real(92.0)],
+    [integer(3), text("Bob"), integer(35), real(78.0)],
+    [integer(4), text("Diana"), integer(25), real(88.0)],
+  ];
+
+  it("should sort by single column ASC", () => {
+    const scan = new Scan("users", columns, data);
+    const orderBy: OrderByItem[] = [
+      { expression: col("name"), direction: "ASC" },
+    ];
+    const sort = new Sort(scan, orderBy);
+
+    const rows = collectRows(sort);
+    expect(rows.map((r) => getColumnValue(r, "name"))).toEqual([
+      text("Alice"),
+      text("Bob"),
+      text("Charlie"),
+      text("Diana"),
+    ]);
+  });
+
+  it("should sort by single column DESC", () => {
+    const scan = new Scan("users", columns, data);
+    const orderBy: OrderByItem[] = [
+      { expression: col("age"), direction: "DESC" },
+    ];
+    const sort = new Sort(scan, orderBy);
+
+    const rows = collectRows(sort);
+    expect(rows.map((r) => getColumnValue(r, "age"))).toEqual([
+      integer(35), // Bob
+      integer(30), // Charlie
+      integer(25), // Alice or Diana (same age)
+      integer(25), // Alice or Diana
+    ]);
+  });
+
+  it("should sort by multiple columns", () => {
+    const scan = new Scan("users", columns, data);
+    // ORDER BY age ASC, score DESC
+    const orderBy: OrderByItem[] = [
+      { expression: col("age"), direction: "ASC" },
+      { expression: col("score"), direction: "DESC" },
+    ];
+    const sort = new Sort(scan, orderBy);
+
+    const rows = collectRows(sort);
+    // Age 25: Alice (92.0) before Diana (88.0) because score DESC
+    // Age 30: Charlie
+    // Age 35: Bob
+    expect(rows.map((r) => getColumnValue(r, "name"))).toEqual([
+      text("Alice"),  // age 25, score 92.0
+      text("Diana"),  // age 25, score 88.0
+      text("Charlie"), // age 30
+      text("Bob"),    // age 35
+    ]);
+  });
+
+  it("should handle numeric sorting correctly", () => {
+    const scan = new Scan("users", columns, data);
+    const orderBy: OrderByItem[] = [
+      { expression: col("score"), direction: "ASC" },
+    ];
+    const sort = new Sort(scan, orderBy);
+
+    const rows = collectRows(sort);
+    expect(rows.map((r) => getColumnValue(r, "score"))).toEqual([
+      real(78.0),  // Bob
+      real(85.5),  // Charlie
+      real(88.0),  // Diana
+      real(92.0),  // Alice
+    ]);
+  });
+
+  it("should preserve column schema", () => {
+    const scan = new Scan("users", columns, data);
+    const orderBy: OrderByItem[] = [
+      { expression: col("name"), direction: "ASC" },
+    ];
+    const sort = new Sort(scan, orderBy);
+
+    sort.open();
+    expect(sort.getColumns()).toEqual(columns);
+    sort.close();
+  });
+
+  it("should handle empty input", () => {
+    const scan = new Scan("empty", columns, []);
+    const orderBy: OrderByItem[] = [
+      { expression: col("name"), direction: "ASC" },
+    ];
+    const sort = new Sort(scan, orderBy);
+
+    const rows = collectRows(sort);
+    expect(rows).toHaveLength(0);
+  });
+});
+
+describe("Sort with NULL", () => {
+  const columns = ["id", "name", "age"];
+  const data: Value[][] = [
+    [integer(1), text("Alice"), integer(30)],
+    [integer(2), text("Bob"), NULL],
+    [integer(3), text("Charlie"), integer(25)],
+    [integer(4), text("Diana"), NULL],
+  ];
+
+  it("should sort NULLs last for ASC", () => {
+    const scan = new Scan("users", columns, data);
+    const orderBy: OrderByItem[] = [
+      { expression: col("age"), direction: "ASC" },
+    ];
+    const sort = new Sort(scan, orderBy);
+
+    const rows = collectRows(sort);
+    // Non-NULL values first (sorted), then NULLs
+    expect(rows.map((r) => getColumnValue(r, "name"))).toEqual([
+      text("Charlie"), // age 25
+      text("Alice"),   // age 30
+      text("Bob"),     // age NULL
+      text("Diana"),   // age NULL
+    ]);
+  });
+
+  it("should sort NULLs first for DESC", () => {
+    const scan = new Scan("users", columns, data);
+    const orderBy: OrderByItem[] = [
+      { expression: col("age"), direction: "DESC" },
+    ];
+    const sort = new Sort(scan, orderBy);
+
+    const rows = collectRows(sort);
+    // NULLs first, then non-NULL values (sorted DESC)
+    expect(rows.map((r) => getColumnValue(r, "name"))).toEqual([
+      text("Bob"),     // age NULL
+      text("Diana"),   // age NULL
+      text("Alice"),   // age 30
+      text("Charlie"), // age 25
+    ]);
   });
 });
 

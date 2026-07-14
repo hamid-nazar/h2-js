@@ -199,6 +199,96 @@ describe("Query Executor", () => {
       expect(result.rows).toHaveLength(0);
       expect(result.columns).toEqual(["name"]);
     });
+
+    it("should sort by single column ASC", () => {
+      const stmt = parseSelect("SELECT name, age FROM users ORDER BY age ASC");
+      const result = executeSelect(stmt, store);
+
+      expect(result.rows.map((r) => r[0])).toEqual([
+        text("Bob"),     // 25
+        text("Diana"),   // 28
+        text("Alice"),   // 30
+        text("Charlie"), // 35
+      ]);
+    });
+
+    it("should sort by single column DESC", () => {
+      const stmt = parseSelect("SELECT name, age FROM users ORDER BY age DESC");
+      const result = executeSelect(stmt, store);
+
+      expect(result.rows.map((r) => r[0])).toEqual([
+        text("Charlie"), // 35
+        text("Alice"),   // 30
+        text("Diana"),   // 28
+        text("Bob"),     // 25
+      ]);
+    });
+
+    it("should sort by name alphabetically", () => {
+      const stmt = parseSelect("SELECT name FROM users ORDER BY name ASC");
+      const result = executeSelect(stmt, store);
+
+      expect(result.rows.map((r) => r[0])).toEqual([
+        text("Alice"),
+        text("Bob"),
+        text("Charlie"),
+        text("Diana"),
+      ]);
+    });
+
+    it("should combine ORDER BY with WHERE", () => {
+      const stmt = parseSelect(
+        "SELECT name, age FROM users WHERE active = TRUE ORDER BY age DESC"
+      );
+      const result = executeSelect(stmt, store);
+
+      // Only active users: Alice (30), Charlie (35), Diana (28)
+      // Sorted by age DESC: Charlie, Alice, Diana
+      expect(result.rows.map((r) => r[0])).toEqual([
+        text("Charlie"), // 35
+        text("Alice"),   // 30
+        text("Diana"),   // 28
+      ]);
+    });
+
+    it("should combine ORDER BY with LIMIT", () => {
+      const stmt = parseSelect(
+        "SELECT name FROM users ORDER BY age ASC LIMIT 2"
+      );
+      const result = executeSelect(stmt, store);
+
+      expect(result.rows).toHaveLength(2);
+      expect(result.rows.map((r) => r[0])).toEqual([
+        text("Bob"),   // 25
+        text("Diana"), // 28
+      ]);
+    });
+
+    it("should combine WHERE, ORDER BY, and LIMIT", () => {
+      const stmt = parseSelect(
+        "SELECT name FROM users WHERE active = TRUE ORDER BY age DESC LIMIT 2"
+      );
+      const result = executeSelect(stmt, store);
+
+      expect(result.rows).toHaveLength(2);
+      expect(result.rows.map((r) => r[0])).toEqual([
+        text("Charlie"), // 35
+        text("Alice"),   // 30
+      ]);
+    });
+
+    it("should sort products by price", () => {
+      const stmt = parseSelect(
+        "SELECT name, price FROM products ORDER BY price ASC"
+      );
+      const result = executeSelect(stmt, store);
+
+      expect(result.rows.map((r) => r[0])).toEqual([
+        text("Widget"), // 10.0
+        text("Gizmo"),  // 15.0
+        text("Gadget"), // 25.0
+      ]);
+    });
   });
 
   // ===========================================================================
