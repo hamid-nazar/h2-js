@@ -19,6 +19,11 @@ import {
   EvaluationContext,
   RowContext,
 } from "./evaluator.js";
+import {
+  Aggregate as AggregateFunction,
+  createAggregate,
+  isAggregateFunction,
+} from "./aggregate.js";
 
 // =============================================================================
 // Row Type
@@ -425,6 +430,155 @@ export class Sort implements Operator {
 
   getColumns(): string[] {
     return this.child.getColumns();
+  }
+}
+
+// =============================================================================
+// Aggregate Operator
+// =============================================================================
+
+/**
+ * Specification for an aggregate computation.
+ */
+export interface AggregateSpec {
+  /** The aggregate function name (COUNT, SUM, etc.) */
+  name: string;
+  /** The expression to aggregate (null for COUNT(*)) */
+  expression: Expression | null;
+  /** Output column name */
+  outputName: string;
+}
+
+/**
+ * Aggregates rows into a single summary row.
+ *
+ * Unlike other operators, Aggregate must consume ALL input rows before
+ * producing output. It always produces exactly one row (or zero if the
+ * input is empty and there are no aggregates).
+ *
+ * Example: SELECT COUNT(*), SUM(price), AVG(quantity) FROM products
+ */
+export class Aggregate implements Operator {
+  private isOpen: boolean = false;
+  private resultRow: Row | null = null;
+  private returned: boolean = false;
+
+  constructor(
+    private child: Operator,
+    private specs: AggregateSpec[]
+  ) {}
+
+  open(): void {
+    this.child.open();
+    this.isOpen = true;
+    this.returned = false;
+
+    // Create aggregate instances
+    const aggregates: AggregateFunction[] = this.specs.map((spec) => {
+      const isCountStar = spec.name.toUpperCase() === "COUNT" && spec.expression === null;
+      return createAggregate(spec.name, isCountStar);
+    });
+
+    // Initialize all aggregates
+    for (const agg of aggregates) {
+      agg.init();
+    }
+
+    // Process all input rows
+    let row = this.child.next();
+    let hasRows = false;
+
+    while (row !== null) {
+      hasRows = true;
+      const context = rowToContext(row);
+
+      // Accumulate each aggregate
+      for (let i = 0; i < this.specs.length; i++) {
+        const spec = this.specs[i];
+        const agg = aggregates[i];
+
+        if (spec && agg) {
+          if (spec.expression === null) {
+            // COUNT(*) - pass a dummy non-null value
+            agg.accumulate({ type: "INTEGER", value: 1 });
+          } else {
+            const value = evaluate(spec.expression, context);
+            agg.accumulate(value);
+          }
+        }
+      }
+
+      row = this.child.next();
+    }
+
+    // Build result row (even for empty input, aggregates return values)
+    // COUNT(*) returns 0 for empty input, others return NULL
+    const columns = this.specs.map((spec) => spec.outputName);
+    const values = aggregates.map((agg) => agg.finalize());
+
+    // For empty input with no aggregates, return no rows
+    // For empty input with aggregates, return one row with results
+    if (this.specs.length > 0 || hasRows) {
+      this.resultRow = createRow(columns, values);
+    } else {
+      this.resultRow = null;
+    }
+  }
+
+  next(): Row | null {
+    if (!this.isOpen) {
+      throw new Error("Operator not open");
+    }
+
+    if (this.returned || this.resultRow === null) {
+      return null;
+    }
+
+    this.returned = true;
+    return this.resultRow;
+  }
+
+  close(): void {
+    this.child.close();
+    this.resultRow = null;
+    this.isOpen = false;
+  }
+
+  getColumns(): string[] {
+    return this.specs.map((spec) => spec.outputName);
+  }
+}
+
+/**
+ * Check if a SelectColumn contains an aggregate function.
+ */
+export function hasAggregateInColumn(col: SelectColumn): boolean {
+  if (col.type === "AllColumns") {
+    return false;
+  }
+  return hasAggregateInExpression(col.expression);
+}
+
+/**
+ * Check if an expression contains an aggregate function.
+ */
+export function hasAggregateInExpression(expr: Expression): boolean {
+  switch (expr.type) {
+    case "Literal":
+    case "ColumnRef":
+      return false;
+
+    case "FunctionCall":
+      return isAggregateFunction(expr.name);
+
+    case "Binary":
+      return (
+        hasAggregateInExpression(expr.left) ||
+        hasAggregateInExpression(expr.right)
+      );
+
+    case "Unary":
+      return hasAggregateInExpression(expr.operand);
   }
 }
 

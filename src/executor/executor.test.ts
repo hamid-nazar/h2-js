@@ -292,6 +292,107 @@ describe("Query Executor", () => {
   });
 
   // ===========================================================================
+  // Aggregate Tests
+  // ===========================================================================
+
+  describe("Aggregates", () => {
+    it("should count all rows with COUNT(*)", () => {
+      const stmt = parseSelect("SELECT COUNT(*) FROM users");
+      const result = executeSelect(stmt, store);
+
+      expect(result.columns).toEqual(["count"]);
+      expect(result.rows).toHaveLength(1);
+      expect(result.rows[0]).toEqual([integer(4)]);
+    });
+
+    it("should count rows with WHERE clause", () => {
+      const stmt = parseSelect("SELECT COUNT(*) FROM users WHERE active = TRUE");
+      const result = executeSelect(stmt, store);
+
+      expect(result.rows[0]).toEqual([integer(3)]); // Alice, Charlie, Diana
+    });
+
+    it("should compute SUM", () => {
+      const stmt = parseSelect("SELECT SUM(age) FROM users");
+      const result = executeSelect(stmt, store);
+
+      // 30 + 25 + 35 + 28 = 118
+      expect(result.rows[0]).toEqual([integer(118)]);
+    });
+
+    it("should compute AVG", () => {
+      const stmt = parseSelect("SELECT AVG(age) FROM users");
+      const result = executeSelect(stmt, store);
+
+      // (30 + 25 + 35 + 28) / 4 = 29.5
+      expect(result.rows[0]).toEqual([real(29.5)]);
+    });
+
+    it("should compute MIN", () => {
+      const stmt = parseSelect("SELECT MIN(age) FROM users");
+      const result = executeSelect(stmt, store);
+
+      expect(result.rows[0]).toEqual([integer(25)]); // Bob
+    });
+
+    it("should compute MAX", () => {
+      const stmt = parseSelect("SELECT MAX(age) FROM users");
+      const result = executeSelect(stmt, store);
+
+      expect(result.rows[0]).toEqual([integer(35)]); // Charlie
+    });
+
+    it("should support multiple aggregates", () => {
+      const stmt = parseSelect("SELECT COUNT(*), MIN(age), MAX(age) FROM users");
+      const result = executeSelect(stmt, store);
+
+      expect(result.rows).toHaveLength(1);
+      expect(result.rows[0]).toEqual([integer(4), integer(25), integer(35)]);
+    });
+
+    it("should support aggregates with aliases", () => {
+      const stmt = parseSelect(
+        "SELECT COUNT(*) AS total, AVG(age) AS avg_age FROM users"
+      );
+      const result = executeSelect(stmt, store);
+
+      expect(result.columns).toEqual(["total", "avg_age"]);
+      expect(result.rows[0]?.[0]).toEqual(integer(4));
+    });
+
+    it("should compute SUM on real values", () => {
+      const stmt = parseSelect("SELECT SUM(price) FROM products");
+      const result = executeSelect(stmt, store);
+
+      // 10.0 + 25.0 + 15.0 = 50.0
+      expect(result.rows[0]).toEqual([real(50.0)]);
+    });
+
+    it("should compute AVG on real values", () => {
+      const stmt = parseSelect("SELECT AVG(price) FROM products");
+      const result = executeSelect(stmt, store);
+
+      // (10.0 + 25.0 + 15.0) / 3 ≈ 16.67
+      const avgValue = result.rows[0]?.[0] as { value: number };
+      expect(avgValue.value).toBeCloseTo(16.67, 1);
+    });
+
+    it("should return 0 for COUNT on empty result", () => {
+      const stmt = parseSelect("SELECT COUNT(*) FROM users WHERE age > 1000");
+      const result = executeSelect(stmt, store);
+
+      expect(result.rows[0]).toEqual([integer(0)]);
+    });
+
+    it("should return NULL for SUM on empty result", () => {
+      const stmt = parseSelect("SELECT SUM(age) FROM users WHERE age > 1000");
+      const result = executeSelect(stmt, store);
+
+      expect(isNull(result.rows[0]?.[0] as Value)).toBe(true);
+    });
+  });
+
+  // ===========================================================================
   // INSERT Tests
   // ===========================================================================
 

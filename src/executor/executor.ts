@@ -12,14 +12,27 @@
 import {
   Statement,
   SelectStatement,
+  SelectColumn,
   InsertStatement,
   UpdateStatement,
   DeleteStatement,
 } from "../sql/ast.js";
 import { Value } from "../types/value.js";
 import { evaluate, RowContext } from "./evaluator.js";
-import { Operator, Row, Scan, Filter, Project, Sort, Limit } from "./operator.js";
+import {
+  Operator,
+  Row,
+  Scan,
+  Filter,
+  Project,
+  Sort,
+  Limit,
+  Aggregate,
+  AggregateSpec,
+  hasAggregateInColumn,
+} from "./operator.js";
 import { TableStore } from "./store.js";
+import { isAggregateFunction } from "./aggregate.js";
 
 // =============================================================================
 // Execution Result
@@ -77,9 +90,10 @@ export interface DropTableResult {
  * The tree is built bottom-up:
  * 1. Scan (FROM)
  * 2. Filter (WHERE)
- * 3. Sort (ORDER BY) - note: must come before Project for column access
- * 4. Project (SELECT)
- * 5. Limit (LIMIT)
+ * 3. Aggregate (if SELECT contains aggregate functions)
+ * 4. Sort (ORDER BY) - note: must come before Project for column access
+ * 5. Project (SELECT)
+ * 6. Limit (LIMIT)
  */
 export function buildSelectOperator(
   stmt: SelectStatement,
@@ -95,20 +109,76 @@ export function buildSelectOperator(
     op = new Filter(op, stmt.where);
   }
 
-  // 3. Add Sort if ORDER BY clause exists (before Project for column access)
-  if (stmt.orderBy && stmt.orderBy.length > 0) {
-    op = new Sort(op, stmt.orderBy);
+  // 3. Check if SELECT contains aggregate functions
+  const hasAggregates = stmt.columns.some(hasAggregateInColumn);
+
+  if (hasAggregates) {
+    // Build aggregate specifications from SELECT columns
+    const specs = buildAggregateSpecs(stmt.columns);
+    op = new Aggregate(op, specs);
+
+    // For aggregate queries, Project just passes through the aggregate results
+    // No need to add Sort before Project since we only have one row
+  } else {
+    // 4. Add Sort if ORDER BY clause exists (before Project for column access)
+    if (stmt.orderBy && stmt.orderBy.length > 0) {
+      op = new Sort(op, stmt.orderBy);
+    }
   }
 
-  // 4. Add Project for SELECT columns
-  op = new Project(op, stmt.columns);
+  // 5. Add Project for SELECT columns
+  // For aggregates, we need a special projection that maps aggregate results
+  if (hasAggregates) {
+    // For aggregate queries, the Aggregate operator already produces the right columns
+    // We skip Project to avoid re-evaluating the aggregate expressions
+  } else {
+    op = new Project(op, stmt.columns);
+  }
 
-  // 5. Add Limit if LIMIT clause exists
+  // 6. Add Limit if LIMIT clause exists
   if (stmt.limit !== undefined) {
     op = new Limit(op, stmt.limit);
   }
 
   return op;
+}
+
+/**
+ * Build aggregate specifications from SELECT columns.
+ */
+function buildAggregateSpecs(columns: SelectColumn[]): AggregateSpec[] {
+  const specs: AggregateSpec[] = [];
+
+  for (const col of columns) {
+    if (col.type === "AllColumns") {
+      throw new Error("SELECT * is not allowed with aggregate functions");
+    }
+
+    const expr = col.expression;
+    if (expr.type === "FunctionCall" && isAggregateFunction(expr.name)) {
+      // This is an aggregate function
+      const firstArg = expr.args[0];
+      const isCountStar =
+        expr.name.toUpperCase() === "COUNT" &&
+        expr.args.length === 1 &&
+        firstArg?.type === "ColumnRef" &&
+        firstArg.column === "*";
+
+      specs.push({
+        name: expr.name,
+        expression: isCountStar ? null : (firstArg ?? null),
+        outputName: col.alias ?? expr.name.toLowerCase(),
+      });
+    } else {
+      // Non-aggregate in an aggregate query - this would require GROUP BY
+      // For now, we'll throw an error
+      throw new Error(
+        "Non-aggregate columns in SELECT require GROUP BY (not yet supported)"
+      );
+    }
+  }
+
+  return specs;
 }
 
 /**
